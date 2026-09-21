@@ -1,0 +1,8 @@
+.vscode/**
+src/**
+dist/test/**
+.mocharc.json
+tsconfig.json
+.gitignore
+**/*.map
+**/.gitkeep

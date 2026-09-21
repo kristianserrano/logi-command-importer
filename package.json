@@ -1,0 +1,120 @@
+{
+  "name": "logi-command-importer",
+  "displayName": "Logi Command Importer",
+  "description": "Discover namespaced VS Code commands and import them into the Logi Command Manager catalog used by Logi Options+.",
+  "version": "1.0.0",
+  "publisher": "kristianserrano",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kristianserrano/logi-command-importer.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "logiCommandImporter.importNamespacedCommands",
+        "title": "Logi Command Importer: Import Commands"
+      },
+      {
+        "command": "logiCommandImporter.removeImportedCommands",
+        "title": "Logi Command Importer: Remove Commands"
+      },
+      {
+        "command": "logiCommandImporter.findReplaceInCatalog",
+        "title": "Logi Command Importer: Find and Replace in Catalog"
+      },
+      {
+        "command": "logiCommandImporter.openActiveCatalog",
+        "title": "Logi Command Importer: Open Active Logi Catalog"
+      },
+      {
+        "command": "logiCommandImporter.configureCommandSources",
+        "title": "Logi Command Importer: Configure Command Sources"
+      }
+    ],
+    "configuration": {
+      "title": "Logi Command Importer",
+      "properties": {
+        "logiCommandImporter.namespacePrefixes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "examples": [["myExtension.", "workbench.action."]],
+          "markdownDescription": "Command ID prefixes to search for, e.g. `\"git.\"`, `\"workbench.action.\"`, `\"myExtension.\"`.\n\nExample: `[\"myExtension.\", \"workbench.action.\"]`"
+        },
+        "logiCommandImporter.displayNameOverrides": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "default": {},
+          "examples": [{ "myExtension.doTheThing": "Do The Thing (Legacy)" }],
+          "markdownDescription": "Map of command ID to an explicit display name, overriding inferred names.\n\nExample: `{ \"myExtension.doTheThing\": \"Do The Thing (Legacy)\" }`"
+        },
+        "logiCommandImporter.groupNameOverrides": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "default": {},
+          "examples": [{ "myExtension.doTheThing": "My Extension" }],
+          "markdownDescription": "Map of command ID to an explicit Logi group name, overriding the derived default.\n\nExample: `{ \"myExtension.doTheThing\": \"My Extension\" }`"
+        },
+        "logiCommandImporter.subGroupRules": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "examples": ["myExtension.insert|Insert Commands"],
+          "markdownDescription": "Rules mapping a command ID prefix to a subgroup name, one `prefix|subGroupName` pair per line. The longest matching prefix wins.\n\nExample: `myExtension.insert|Insert Commands`"
+        },
+        "logiCommandImporter.sourceExtensionFilters": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "examples": [["somePublisher.myExtension"]],
+          "markdownDescription": "Extension IDs to search by, in addition to namespace prefixes — every command from these extensions is included, regardless of namespace. Pre-fills the \"Search by extension\" picker; empty means no extension-based search by default.\n\nExample: `[\"somePublisher.myExtension\"]`"
+        },
+        "logiCommandImporter.selectedByDefault": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Whether newly imported catalog entries are marked `\"selected\"` by default."
+        },
+        "logiCommandImporter.displayNameFindReplace": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "examples": ["MyExtension: |"],
+          "markdownDescription": "Literal find/replace rules applied to *inferred* display names on every future import (never to an explicit `displayNameOverrides` entry), one `find|replace` pair per line. For a one-off cleanup of names already in the catalog, use **Logi Command Importer: Find and Replace in Catalog** instead.\n\nExample: `MyExtension: |` (finds `\"MyExtension: \"` and replaces it with nothing)"
+        },
+        "logiCommandImporter.groupNameFindReplace": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "examples": [" for VS Code|"],
+          "markdownDescription": "Literal find/replace rules applied to *derived* group names on every future import (never to an explicit `groupNameOverrides` entry), one `find|replace` pair per line. For a one-off cleanup of names already in the catalog, use **Logi Command Importer: Find and Replace in Catalog** instead.\n\nExample: ` for VS Code|` (finds `\" for VS Code\"` and replaces it with nothing)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test:unit": "mocha --require ts-node/register 'src/test/unit/**/*.test.ts'",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "mocha": "^10.3.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
