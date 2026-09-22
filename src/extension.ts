@@ -381,7 +381,7 @@ async function runOpenCatalog(): Promise<void> {
   }
 }
 
-async function runConfigureSources(): Promise<void> {
+async function runOpenSettings(): Promise<void> {
   await vscode.commands.executeCommand("workbench.action.openSettings", CONFIG_SECTION);
 }
 
@@ -391,7 +391,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("logiCommandImporter.removeImportedCommands", runRemoveFlow),
     vscode.commands.registerCommand("logiCommandImporter.findReplaceInCatalog", runFindReplaceFlow),
     vscode.commands.registerCommand("logiCommandImporter.openActiveCatalog", runOpenCatalog),
-    vscode.commands.registerCommand("logiCommandImporter.configureCommandSources", runConfigureSources)
+    vscode.commands.registerCommand("logiCommandImporter.openSettings", runOpenSettings)
   );
 }
 

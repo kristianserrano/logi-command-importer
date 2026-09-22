@@ -20,7 +20,7 @@ All commands are available from the Command Palette (`Cmd/Ctrl+Shift+P`):
 | **Logi Command Importer: Remove Commands** | Lets you select any catalog entry to remove, whether or not this extension imported it. |
 | **Logi Command Importer: Find and Replace in Catalog** | One-off bulk cleanup of `displayName`/`groupName` text already in the catalog (e.g. stripping a redundant prefix an extension baked into its own titles), with a full preview before anything is written. |
 | **Logi Command Importer: Open Active Logi Catalog** | Opens the resolved `logiActions.json` file for the current platform. |
-| **Logi Command Importer: Configure Command Sources** | Opens Settings, scoped to this extension's configuration. |
+| **Logi Command Importer: Open Settings** | Opens Settings, scoped to this extension's configuration. |
 
 ## Import flow
 
@@ -29,7 +29,7 @@ All commands are available from the Command Palette (`Cmd/Ctrl+Shift+P`):
 3. Select the commands to import.
 4. Confirm. The extension reports how many entries were added and how many were skipped as duplicates.
 
-A `namespacePrefixes` setting is still available to always additionally include commands matching a configured prefix, but there's no dedicated prompt for it in the flow — set it once via **Configure Command Sources** if you want it, rather than typing it in on every import.
+A `namespacePrefixes` setting is still available to always additionally include commands matching a configured prefix, but there's no dedicated prompt for it in the flow — set it once via **Open Settings** if you want it, rather than typing it in on every import.
 
 There's no separate preview/dry-run command — the review step above already shows exactly what would be imported (display name, command id, source extension, group/subgroup) before you commit to anything, and already-cataloged commands are excluded from it entirely, so there's nothing further a preview step would add.
 
@@ -110,7 +110,7 @@ For a rule you want applied automatically to every *future* import instead of a 
 
 ## Configuration
 
-All settings live under `logiCommandImporter.*` and can be edited via **Logi Command Importer: Configure Command Sources** or directly in `settings.json`:
+All settings live under `logiCommandImporter.*` and can be edited via **Logi Command Importer: Open Settings** or directly in `settings.json`:
 
 | Setting | Type | Description | Example |
 | --- | --- | --- | --- |
