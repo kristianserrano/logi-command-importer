@@ -15,6 +15,9 @@
   "categories": [
     "Other"
   ],
+  "extensionKind": [
+    "ui"
+  ],
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
@@ -48,7 +51,7 @@
           "items": { "type": "string" },
           "default": [],
           "examples": [["myExtension.", "workbench.action."]],
-          "markdownDescription": "Command ID prefixes to search for, e.g. `\"git.\"`, `\"workbench.action.\"`, `\"myExtension.\"`.\n\nExample: `[\"myExtension.\", \"workbench.action.\"]`"
+          "markdownDescription": "Also include commands whose ID starts with any of these prefixes, including VS Code's own commands and commands that extensions register only at runtime. They are imported under the \"Saved Commands\" category. The subcategory, when there is one, comes from the ID segments after the longest matching prefix, so a longer prefix gives better subcategories (e.g. `\"workbench.action.\"`, not `\"workbench.\"`).\n\nExample: `[\"myExtension.\", \"workbench.action.\"]`"
         },
         "logiCommandImporter.displayNameOverrides": {
           "type": "object",
@@ -62,21 +65,21 @@
           "additionalProperties": { "type": "string" },
           "default": {},
           "examples": [{ "myExtension.doTheThing": "My Extension" }],
-          "markdownDescription": "Map of command ID to an explicit Logi group name, overriding the derived default.\n\nExample: `{ \"myExtension.doTheThing\": \"My Extension\" }`"
+          "markdownDescription": "Map of command ID to an explicit category name, overriding the derived default. (The key says \"group\"; it sets the Category shown in Logi Command Manager.)\n\nExample: `{ \"myExtension.doTheThing\": \"My Extension\" }`"
         },
         "logiCommandImporter.subGroupRules": {
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
           "examples": ["myExtension.insert|Insert Commands"],
-          "markdownDescription": "Rules mapping a command ID prefix to a subgroup name, one `prefix|subGroupName` pair per line. The longest matching prefix wins.\n\nExample: `myExtension.insert|Insert Commands`"
+          "markdownDescription": "Rules mapping a command ID prefix to a subcategory name, one `prefix|subcategoryName` pair per line. Declared commands have no subcategory unless a rule matches. The longest matching prefix wins.\n\nExample: `myExtension.insert|Insert Commands`"
         },
         "logiCommandImporter.sourceExtensionFilters": {
           "type": "array",
           "items": { "type": "string" },
           "default": [],
           "examples": [["somePublisher.myExtension"]],
-          "markdownDescription": "Extension IDs to search by, in addition to namespace prefixes — every command from these extensions is included, regardless of namespace. Pre-fills the \"Search by extension\" picker; empty means no extension-based search by default.\n\nExample: `[\"somePublisher.myExtension\"]`"
+          "markdownDescription": "Extension IDs to pre-check in the \"Import commands from which extensions? (optional)\" picker. Every declared and view-generated command from the extensions checked at import time is included. Empty means nothing is pre-checked.\n\nExample: `[\"somePublisher.myExtension\"]`"
         },
         "logiCommandImporter.selectedByDefault": {
           "type": "boolean",
@@ -95,7 +98,7 @@
           "default": "",
           "editPresentation": "multilineText",
           "examples": [" for VS Code|"],
-          "markdownDescription": "Literal find/replace rules applied to *derived* group names on every future import (never to an explicit `groupNameOverrides` entry), one `find|replace` pair per line. For a one-off cleanup of names already in the catalog, use **Logi Command Importer: Find and Replace in Catalog** instead.\n\nExample: ` for VS Code|` (finds `\" for VS Code\"` and replaces it with nothing)"
+          "markdownDescription": "Literal find/replace rules applied to *derived* category names on every future import (never to an explicit `groupNameOverrides` entry), one `find|replace` pair per line. For a one-off cleanup of names already in the catalog, use **Logi Command Importer: Find and Replace in Catalog** instead.\n\nExample: ` for VS Code|` (finds `\" for VS Code\"` and replaces it with nothing)"
         }
       }
     }

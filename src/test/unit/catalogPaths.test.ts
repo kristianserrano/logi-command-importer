@@ -1,5 +1,5 @@
 import * as assert from "assert";
-import { resolveCatalogPath, resolveObsoleteCatalogPath } from "../../catalogPaths";
+import { resolveCatalogPath } from "../../catalogPaths";
 
 describe("catalogPaths", () => {
   it("resolves the macOS path under Application Support", () => {
@@ -38,10 +38,5 @@ describe("catalogPaths", () => {
   it("never resolves to the obsolete logitech-europe-sa.logiactions id", () => {
     const p = resolveCatalogPath({ platform: "darwin", homedir: "/Users/kris" });
     assert.ok(!p.includes("logitech-europe-sa.logiactions"));
-  });
-
-  it("can compute the obsolete path separately for migration-detection purposes", () => {
-    const p = resolveObsoleteCatalogPath({ platform: "darwin", homedir: "/Users/kris" });
-    assert.ok(p.includes("logitech-europe-sa.logiactions"));
   });
 });

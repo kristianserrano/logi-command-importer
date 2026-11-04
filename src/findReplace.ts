@@ -57,3 +57,63 @@ export function parseLineDelimitedPairs(text: string): Record<string, string> {
   }
   return rules;
 }
+
+/** Which catalog field(s) a bulk find/replace applies to. Never `actionName`. */
+export type FindReplaceScope = "displayName" | "groupName" | "both";
+
+/** The subset of a catalog entry the find/replace logic reads. */
+export interface FindReplaceTarget {
+  actionName: string;
+  displayName: string;
+  groupName: string;
+}
+
+/** One entry's pending edit. A field is `undefined` when that field is not changing. */
+export interface FindReplaceChange {
+  actionName: string;
+  newDisplayName?: string;
+  newGroupName?: string;
+}
+
+/**
+ * Computes which catalog entries a literal find/replace would modify, within `scope`. Entries
+ * the rule leaves unchanged are omitted; for the rest, only the fields that actually change are
+ * set on the returned change. Pure — nothing is written.
+ */
+export function computeFindReplaceChanges(
+  catalog: readonly FindReplaceTarget[],
+  rule: Record<string, string>,
+  scope: FindReplaceScope
+): FindReplaceChange[] {
+  const scopesDisplayName = scope === "both" || scope === "displayName";
+  const scopesGroupName = scope === "both" || scope === "groupName";
+
+  const changes: FindReplaceChange[] = [];
+  for (const entry of catalog) {
+    const newDisplayName = scopesDisplayName ? applyFindReplaceRules(entry.displayName, rule) : entry.displayName;
+    const newGroupName = scopesGroupName ? applyFindReplaceRules(entry.groupName, rule) : entry.groupName;
+    const displayChanged = newDisplayName !== entry.displayName;
+    const groupChanged = newGroupName !== entry.groupName;
+    if (!displayChanged && !groupChanged) {
+      continue;
+    }
+    changes.push({
+      actionName: entry.actionName,
+      newDisplayName: displayChanged ? newDisplayName : undefined,
+      newGroupName: groupChanged ? newGroupName : undefined,
+    });
+  }
+  return changes;
+}
+
+/** Human-readable "old → new" text for one pending change, shown in the review Quick Pick. */
+export function formatChangePreview(entry: FindReplaceTarget, change: FindReplaceChange): string {
+  const parts: string[] = [];
+  if (change.newDisplayName !== undefined) {
+    parts.push(`"${entry.displayName}" → "${change.newDisplayName}"`);
+  }
+  if (change.newGroupName !== undefined) {
+    parts.push(`group: "${entry.groupName}" → "${change.newGroupName}"`);
+  }
+  return parts.join("   ");
+}

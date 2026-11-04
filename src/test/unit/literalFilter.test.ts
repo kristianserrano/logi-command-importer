@@ -22,10 +22,10 @@ describe("literalFilter", () => {
     });
 
     it("does not match via fuzzy subsequence — this is the whole point", () => {
-      // Reproduces the reported bug: searching "Logi " (trailing space) should not match
-      // "turboConsoleLog.insertConsoleLog", even though its characters L-o-g-...-i appear in
-      // order somewhere in the string (which is what VS Code's built-in fuzzy filter would do).
-      const searchText = buildSearchText(["Insert Console Log", "turboConsoleLog.insertConsoleLog"]);
+      // Searching "logi" must not match "myExtension.toggleLogging": the letters l-o-g-i appear
+      // in order ("logg" then "i"), which is what VS Code's built-in fuzzy filter would accept,
+      // but "logi" is not a substring of it.
+      const searchText = buildSearchText(["Toggle Logging", "myExtension.toggleLogging"]);
       assert.ok(!matchesLiteralQuery(searchText, "Logi"));
     });
 

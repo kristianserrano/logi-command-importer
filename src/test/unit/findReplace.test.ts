@@ -1,18 +1,23 @@
 import * as assert from "assert";
-import { applyFindReplaceRules, parseLineDelimitedPairs } from "../../findReplace";
+import {
+  applyFindReplaceRules,
+  computeFindReplaceChanges,
+  formatChangePreview,
+  parseLineDelimitedPairs,
+} from "../../findReplace";
 
 describe("findReplace", () => {
   describe("applyFindReplaceRules", () => {
     it("replaces every occurrence of find with replace", () => {
       assert.strictEqual(
-        applyFindReplaceRules("Claude Code: Accept Claude Code: Reject", { "Claude Code: ": "" }),
+        applyFindReplaceRules("My Extension: Accept My Extension: Reject", { "My Extension: ": "" }),
         "Accept Reject"
       );
     });
 
     it("supports removal via an empty replace string", () => {
       assert.strictEqual(
-        applyFindReplaceRules("Turbo Console Log: Insert Log", { "Turbo Console Log: ": "" }),
+        applyFindReplaceRules("Other Extension: Insert Log", { "Other Extension: ": "" }),
         "Insert Log"
       );
     });
@@ -47,19 +52,19 @@ describe("findReplace", () => {
 
   describe("parseLineDelimitedPairs", () => {
     it("parses a single find|replace line", () => {
-      assert.deepStrictEqual(parseLineDelimitedPairs("Claude Code: |"), { "Claude Code: ": "" });
+      assert.deepStrictEqual(parseLineDelimitedPairs("My Extension: |"), { "My Extension: ": "" });
     });
 
     it("parses multiple lines into multiple rules", () => {
-      assert.deepStrictEqual(parseLineDelimitedPairs("Logi Command Manager: |\nTurbo Console Log: |"), {
+      assert.deepStrictEqual(parseLineDelimitedPairs("Logi Command Manager: |\nOther Extension: |"), {
         "Logi Command Manager: ": "",
-        "Turbo Console Log: ": "",
+        "Other Extension: ": "",
       });
     });
 
     it("preserves a meaningful trailing space in the find text, taking everything before the delimiter verbatim", () => {
-      const rules = parseLineDelimitedPairs("Claude Code: |");
-      assert.ok(Object.prototype.hasOwnProperty.call(rules, "Claude Code: "));
+      const rules = parseLineDelimitedPairs("My Extension: |");
+      assert.ok(Object.prototype.hasOwnProperty.call(rules, "My Extension: "));
     });
 
     it("captures a non-empty replacement", () => {
@@ -96,6 +101,95 @@ describe("findReplace", () => {
 
     it("later lines override earlier ones for the same find text, like a plain object would", () => {
       assert.deepStrictEqual(parseLineDelimitedPairs("Old|First\nOld|Second"), { Old: "Second" });
+    });
+  });
+
+  describe("computeFindReplaceChanges", () => {
+    const catalog = [
+      { actionName: "a.one", displayName: "My Extension: One", groupName: "My Extension" },
+      { actionName: "a.two", displayName: "Two", groupName: "My Extension" },
+      { actionName: "a.three", displayName: "My Extension: Three", groupName: "Other" },
+      { actionName: "a.four", displayName: "Four", groupName: "Other" },
+    ];
+    const rule = { "My Extension": "CC" };
+
+    it("scope displayName only changes display names", () => {
+      assert.deepStrictEqual(computeFindReplaceChanges(catalog, rule, "displayName"), [
+        { actionName: "a.one", newDisplayName: "CC: One", newGroupName: undefined },
+        { actionName: "a.three", newDisplayName: "CC: Three", newGroupName: undefined },
+      ]);
+    });
+
+    it("scope groupName only changes group names (group-only change)", () => {
+      assert.deepStrictEqual(computeFindReplaceChanges(catalog, rule, "groupName"), [
+        { actionName: "a.one", newDisplayName: undefined, newGroupName: "CC" },
+        { actionName: "a.two", newDisplayName: undefined, newGroupName: "CC" },
+      ]);
+    });
+
+    it("scope both changes either or both fields, skipping no-op entries", () => {
+      const changes = computeFindReplaceChanges(catalog, rule, "both");
+      assert.deepStrictEqual(changes, [
+        { actionName: "a.one", newDisplayName: "CC: One", newGroupName: "CC" },
+        { actionName: "a.two", newDisplayName: undefined, newGroupName: "CC" },
+        { actionName: "a.three", newDisplayName: "CC: Three", newGroupName: undefined },
+      ]);
+      assert.ok(!changes.some((c) => c.actionName === "a.four"));
+    });
+
+    it("returns nothing when no entry matches", () => {
+      assert.deepStrictEqual(computeFindReplaceChanges(catalog, { zzz: "y" }, "both"), []);
+      assert.deepStrictEqual(computeFindReplaceChanges([], rule, "both"), []);
+    });
+
+    it("replaces multiple matches within one field", () => {
+      const result = computeFindReplaceChanges(
+        [{ actionName: "x", displayName: "ab ab ab", groupName: "g" }],
+        { ab: "c" },
+        "displayName"
+      );
+      assert.deepStrictEqual(result, [{ actionName: "x", newDisplayName: "c c c", newGroupName: undefined }]);
+    });
+
+    it("treats find as literal text even when it contains regex characters", () => {
+      const entries = [
+        { actionName: "x", displayName: "Run (all) [tests]. Now", groupName: "g.*" },
+        { actionName: "y", displayName: "Run Xall tests", groupName: "gabc" },
+      ];
+      assert.deepStrictEqual(computeFindReplaceChanges(entries, { "(all) [tests].": "T" }, "displayName"), [
+        { actionName: "x", newDisplayName: "Run T Now", newGroupName: undefined },
+      ]);
+      assert.deepStrictEqual(computeFindReplaceChanges(entries, { ".*": "!" }, "groupName"), [
+        { actionName: "x", newDisplayName: undefined, newGroupName: "g!" },
+      ]);
+    });
+
+    it("never touches actionName", () => {
+      const changes = computeFindReplaceChanges(
+        [{ actionName: "My Extension.cmd", displayName: "My Extension", groupName: "g" }],
+        rule,
+        "both"
+      );
+      assert.strictEqual(changes[0].actionName, "My Extension.cmd");
+    });
+  });
+
+  describe("formatChangePreview", () => {
+    const entry = { actionName: "a", displayName: "Old", groupName: "OldG" };
+
+    it("shows display-name change only", () => {
+      assert.strictEqual(formatChangePreview(entry, { actionName: "a", newDisplayName: "New" }), '"Old" → "New"');
+    });
+
+    it("shows group change only", () => {
+      assert.strictEqual(formatChangePreview(entry, { actionName: "a", newGroupName: "NewG" }), 'group: "OldG" → "NewG"');
+    });
+
+    it("shows both, separated by three spaces", () => {
+      assert.strictEqual(
+        formatChangePreview(entry, { actionName: "a", newDisplayName: "New", newGroupName: "NewG" }),
+        '"Old" → "New"   group: "OldG" → "NewG"'
+      );
     });
   });
 });

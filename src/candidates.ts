@@ -1,68 +1,57 @@
 import { CandidateEntry, DiscoveredCommand, ImporterConfig } from "./types";
 import { matchesAnyNamespace, matchesSourceExtension } from "./filtering";
-import { inferPredominantNamespaceRoots } from "./discovery";
 import { applyFindReplaceRules } from "./findReplace";
-import { buildDisplayNameFromManifest, deriveDefaultGroup, deriveDefaultSubGroup } from "./naming";
+import { buildDisplayNameFromManifest, deriveDefaultSubGroup, inferDisplayName, SAVED_COMMANDS_GROUP, toLowercaseWords } from "./naming";
 
 /**
- * Filters discovered commands by namespace prefix and/or source extension and builds the
- * candidate catalog entries (with inferred + overridden naming) shown to the user for review. A
- * command is a candidate if it matches *either* a configured namespace prefix or one of the
- * configured source extension ids — the two are independent ways in, not a narrowing AND, since
- * "give me everything from this extension" (e.g. to catch VS Code's auto-generated per-view
- * commands, which share no namespace with an extension's own declared commands) is a real need
- * a namespace prefix alone can't express.
+ * Builds the candidate catalog entries (with derived + overridden naming) shown to the user.
  *
- * VS Code's own auto-generated per-view/per-container commands (`isGenerated`, resolved via
- * exact view/container id matches — see discovery.ts) are always excluded, with no override: they
- * were never declared by any extension, are never Command Palette-visible, and Logi's own default
- * catalog contains zero of them. Anyone who genuinely wants one can add it directly in Logi
- * Options+. This is a hard exclusion specifically because it's precise, not a suffix guess — a
- * deliberate, titled command like "Open in Terminal" ending in ".open" is never affected by it,
- * only commands whose id exactly matches a real declared view/container id are.
+ * Inclusion: a command is a candidate if it matches a configured namespace prefix (any kind) OR
+ * belongs to a picked source extension (declared/generated only — undeclared commands have no
+ * owner). With neither list configured, every declared and generated command qualifies, but
+ * undeclared ones never do without a prefix match (the registry is mostly VS Code internals).
  *
- * `displayNameFindReplace`/`groupNameFindReplace` rules are applied to the *inferred* display
- * name and group only — never to an explicit `displayNameOverrides`/`groupNameOverrides` entry,
- * since an override is already the final, deliberate answer for that specific command.
+ * Naming: declared commands group under their manifest category (else the extension name) with no
+ * subcategory unless a `subGroupRules` match applies; generated view commands group under the
+ * extension name with the subcategory chosen in discovery; undeclared commands go under the fixed
+ * SAVED_COMMANDS_GROUP with a subcategory stripped from the matched namespace prefix.
+ *
+ * `displayNameFindReplace` applies to derived display names and `groupNameFindReplace` to derived
+ * group names of declared/generated commands — never to explicit overrides (already the final
+ * answer) nor to the fixed Saved Commands group.
  */
 export function buildCandidates(discovered: DiscoveredCommand[], config: ImporterConfig): CandidateEntry[] {
-  // With no namespace prefixes and no source extension filters configured at all, there's no
-  // criterion to filter by — show every discovered command rather than nothing, the same way
-  // VS Code's own Command Palette shows everything and relies on its search box to narrow down,
-  // rather than requiring some filter to be picked first.
   const hasAnyCriteria = config.namespacePrefixes.length > 0 || config.sourceExtensionFilters.length > 0;
-
-  // Each extension's own predominant namespace root (from its own manifest-declared commands, not
-  // anything the user typed) gives extension-based search the same subgroup derivation that
-  // namespace-prefix search already gets — without it, everything from an extension-only search
-  // would have no subgroup at all, since there'd be no matched prefix to strip.
-  const predominantRootByExtension = inferPredominantNamespaceRoots(discovered.filter((c) => c.title !== undefined));
 
   const candidates: CandidateEntry[] = [];
   for (const cmd of discovered) {
-    if (cmd.isGenerated) {
-      continue;
-    }
+    const isUndeclared = cmd.kind === "undeclared";
     const matchesNamespace = matchesAnyNamespace(cmd.commandId, config.namespacePrefixes);
-    const matchesExtension = matchesSourceExtension(cmd.sourceExtensionId, config.sourceExtensionFilters);
-    if (hasAnyCriteria && !matchesNamespace && !matchesExtension) {
+    const matchesExtension = !isUndeclared && matchesSourceExtension(cmd.sourceExtensionId, config.sourceExtensionFilters);
+    const included = hasAnyCriteria ? matchesNamespace || matchesExtension : !isUndeclared;
+    if (!included) {
       continue;
     }
 
+    // Only undeclared commands derive a subcategory from the namespace prefix; for the others the
+    // empty prefix list leaves just the explicit `subGroupRules` lookup.
+    const subGroupName =
+      deriveDefaultSubGroup(cmd.commandId, config.subGroupRules, isUndeclared ? config.namespacePrefixes : []) ??
+      cmd.defaultSubGroupName ??
+      null;
+
+    const derivedName = isUndeclared
+      ? inferDisplayName(cmd.commandId)
+      : buildDisplayNameFromManifest(cmd.commandId, cmd.title);
+    const derivedDisplayName = isUndeclared && subGroupName ? `${subGroupName}: ${derivedName}` : derivedName;
     const displayName =
       config.displayNameOverrides[cmd.commandId] ??
-      applyFindReplaceRules(
-        buildDisplayNameFromManifest(cmd.commandId, cmd.title),
-        config.displayNameFindReplace
-      );
-    const groupName =
-      config.groupNameOverrides[cmd.commandId] ??
-      applyFindReplaceRules(deriveDefaultGroup(cmd.sourceExtensionDisplayName), config.groupNameFindReplace);
-    const predominantRoot = predominantRootByExtension.get(cmd.sourceExtensionId);
-    const subGroupPrefixes = predominantRoot
-      ? [...config.namespacePrefixes, predominantRoot]
-      : config.namespacePrefixes;
-    const subGroupName = deriveDefaultSubGroup(cmd.commandId, config.subGroupRules, subGroupPrefixes);
+      applyFindReplaceRules(derivedDisplayName, config.displayNameFindReplace);
+
+    const derivedGroupName = isUndeclared
+      ? SAVED_COMMANDS_GROUP
+      : applyFindReplaceRules(cmd.category ?? cmd.sourceExtensionDisplayName, config.groupNameFindReplace);
+    const groupName = config.groupNameOverrides[cmd.commandId] ?? derivedGroupName;
 
     candidates.push({
       commandId: cmd.commandId,
@@ -73,7 +62,51 @@ export function buildCandidates(discovered: DiscoveredCommand[], config: Importe
       subGroupName,
     });
   }
+  disambiguateDuplicateNames(candidates, config.displayNameOverrides);
   return candidates.sort((a, b) => a.commandId.localeCompare(b.commandId));
+}
+
+/**
+ * Logi shows only the title, so entries sharing a category, subcategory and title are
+ * indistinguishable. Where that happens, appends " (<part of the id that differs>)" to each: the
+ * id segments left after trimming the prefix and suffix segments the colliding ids share (e.g.
+ * `gitlens.views.branches.x` / `gitlens.views.remotes.x` become "(branches)" / "(remotes)"), shown
+ * as lowercase space-separated words ("openOnDotDev" becomes "open on dot dev"). At least one
+ * segment is always kept; if two qualifiers still come out equal (ids differing only by case),
+ * the full command id is used instead.
+ * Unique titles are untouched, and an explicit `displayNameOverrides` entry is never altered.
+ */
+function disambiguateDuplicateNames(candidates: CandidateEntry[], displayNameOverrides: Record<string, string>): void {
+  const collisions = new Map<string, CandidateEntry[]>();
+  for (const c of candidates) {
+    const key = [c.groupName, c.subGroupName ?? "", c.displayName].join("\u0000").toLowerCase();
+    collisions.set(key, [...(collisions.get(key) ?? []), c]);
+  }
+
+  for (const set of collisions.values()) {
+    if (set.length < 2) {
+      continue;
+    }
+    const segments = set.map((c) => c.commandId.split("."));
+    const minLength = Math.min(...segments.map((s) => s.length));
+    let head = 0;
+    while (head < minLength - 1 && segments.every((s) => s[head] === segments[0][head])) {
+      head++;
+    }
+    let tail = 0;
+    while (tail < minLength - head - 1 && segments.every((s) => s[s.length - 1 - tail] === segments[0][segments[0].length - 1 - tail])) {
+      tail++;
+    }
+    const qualifiers = segments.map((s) => toLowercaseWords(s.slice(head, s.length - tail).join(".")));
+    const usable = qualifiers.every((q) => q.length > 0) && new Set(qualifiers).size === qualifiers.length;
+
+    set.forEach((c, i) => {
+      if (c.commandId in displayNameOverrides) {
+        return;
+      }
+      c.displayName = `${c.displayName} (${usable ? qualifiers[i] : c.commandId})`;
+    });
+  }
 }
 
 /**

@@ -1,7 +1,18 @@
 import * as assert from "assert";
-import { matchesAnyNamespace, matchesSourceExtension } from "../../filtering";
+import { longestMatchingPrefix, matchesAnyNamespace, matchesSourceExtension } from "../../filtering";
 
 describe("filtering", () => {
+  describe("longestMatchingPrefix", () => {
+    it("returns the longest matching prefix", () => {
+      assert.strictEqual(longestMatchingPrefix("git.branch.create", ["git.", "git.branch."]), "git.branch.");
+    });
+
+    it("returns null when nothing matches, and ignores empty prefixes", () => {
+      assert.strictEqual(longestMatchingPrefix("git.commit", ["svn.", ""]), null);
+      assert.strictEqual(longestMatchingPrefix("git.commit", []), null);
+    });
+  });
+
   describe("matchesAnyNamespace", () => {
     it("matches when the command id starts with any given prefix", () => {
       assert.ok(matchesAnyNamespace("git.commit", ["git.", "workbench.action."]));

@@ -2,13 +2,9 @@ import * as assert from "assert";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { catalogExists, mergeEntries, readCatalog, removeEntries, writeCatalog } from "../../catalogIO";
+import { MAX_BACKUPS, mergeEntries, readCatalog, removeEntries, writeCatalog } from "../../catalogIO";
 import { CatalogEntry } from "../../types";
-
-function tempCatalogPath(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "logi-catalog-test-"));
-  return path.join(dir, "logiActions.json");
-}
+import { tempCatalogPath } from "./testUtils";
 
 const sampleEntry: CatalogEntry = {
   selected: true,
@@ -57,19 +53,32 @@ describe("catalogIO", () => {
       assert.deepStrictEqual(JSON.parse(fs.readFileSync(backupPath!, "utf8")), [sampleEntry]);
     });
 
+    it("keeps only the newest MAX_BACKUPS backups and never touches other files", () => {
+      const catalogPath = tempCatalogPath();
+      const dir = path.dirname(catalogPath);
+      fs.writeFileSync(catalogPath, JSON.stringify([sampleEntry]));
+      for (let i = 0; i < MAX_BACKUPS + 3; i++) {
+        const stamp = `2020-01-01T00-00-${String(i).padStart(2, "0")}-000Z`;
+        fs.writeFileSync(path.join(dir, `logiActions.backup-${stamp}.json`), "[]");
+      }
+      fs.writeFileSync(path.join(dir, "logiActions.backup-notes.json"), "keep");
+      fs.writeFileSync(path.join(dir, "other.backup-2020-01-01T00-00-00-000Z.json"), "keep");
+
+      const { backupPath } = writeCatalog(catalogPath, [sampleEntry]);
+
+      const names = fs.readdirSync(dir);
+      const ours = names.filter((n) => /^logiActions\.backup-\d{4}/.test(n));
+      assert.strictEqual(ours.length, MAX_BACKUPS);
+      assert.ok(names.includes(path.basename(backupPath!)));
+      assert.ok(!names.includes("logiActions.backup-2020-01-01T00-00-00-000Z.json"));
+      assert.ok(names.includes("logiActions.backup-notes.json"));
+      assert.ok(names.includes("other.backup-2020-01-01T00-00-00-000Z.json"));
+    });
+
     it("does not create a backup on the first write (no prior file)", () => {
       const catalogPath = tempCatalogPath();
       const { backupPath } = writeCatalog(catalogPath, [sampleEntry]);
       assert.strictEqual(backupPath, null);
-    });
-  });
-
-  describe("catalogExists", () => {
-    it("reflects whether the catalog file is present", () => {
-      const catalogPath = tempCatalogPath();
-      assert.strictEqual(catalogExists(catalogPath), false);
-      writeCatalog(catalogPath, [sampleEntry]);
-      assert.strictEqual(catalogExists(catalogPath), true);
     });
   });
 

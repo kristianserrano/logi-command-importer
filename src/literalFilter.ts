@@ -11,11 +11,11 @@ export function buildSearchText(fields: (string | undefined)[]): string {
  * literal, case-insensitive substring. An empty/whitespace-only query matches everything.
  *
  * This exists because VS Code's built-in Quick Pick filter is always fuzzy subsequence matching
- * (any characters appearing in order, anywhere across the matched fields) — searching "Logi "
- * (with a trailing space) will match "turboConsoleLog.insertConsoleLog" purely because it
- * contains an L, an o, a g, and later an i in some order, which is surprising and hard to
- * predict for anyone not expecting fuzzy matching. Literal substring matching is what most
- * people actually expect when they type a specific string.
+ * (any characters appearing in order, anywhere across the matched fields) — searching "logi"
+ * will match "myExtension.toggleLogging" purely because its letters l, o, g, i appear in that
+ * order ("logg" then "i"), even though "logi" is not a substring of it. That is surprising and
+ * hard to predict for anyone not expecting fuzzy matching. Literal substring matching is what
+ * most people actually expect when they type a specific string.
  */
 export function matchesLiteralQuery(searchText: string, query: string): boolean {
   const needle = query.trim().toLowerCase();

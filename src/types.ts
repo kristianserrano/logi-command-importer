@@ -6,20 +6,27 @@ export interface CatalogEntry {
   subGroupName: string | null;
 }
 
+/**
+ * How a command relates to extension manifests:
+ * - "declared": listed in an extension's `contributes.commands`.
+ * - "generated": built by VS Code for a view an extension declares in `contributes.views`
+ *   (only the `.focus` / `.open` commands are surfaced).
+ * - "undeclared": present in the live registry but in no manifest (VS Code's own commands and
+ *   extensions' runtime-only commands). The registry gives no owner, so these have none.
+ */
+export type CommandKind = "declared" | "generated" | "undeclared";
+
 export interface DiscoveredCommand {
   commandId: string;
   sourceExtensionId: string;
   sourceExtensionDisplayName: string;
+  kind: CommandKind;
+  /** Manifest `title` (declared) or the title template result (generated), localization already resolved. */
   title?: string;
+  /** Manifest `category` as written (declared only), localization already resolved. */
   category?: string;
-  /**
-   * True for VS Code's own auto-generated per-view/per-container commands (e.g.
-   * "claudeVSCodeSidebar.focus", "workbench.view.extension.claude-sidebar") — identified by an
-   * exact match against a declared view/container id, never a suffix guess. These are never
-   * declared in any manifest and are always excluded from import candidates; there is no
-   * override, since anyone who genuinely wants one can add it directly in Logi Options+.
-   */
-  isGenerated?: boolean;
+  /** Default Subcategory for generated view commands (see discovery.ts); a `subGroupRules` match still overrides it. */
+  defaultSubGroupName?: string;
 }
 
 export interface CandidateEntry {
@@ -57,10 +64,3 @@ export const DEFAULT_CONFIG: ImporterConfig = {
 };
 
 export type SupportedPlatform = "darwin" | "win32" | "linux";
-
-export interface ImportOutcome {
-  added: CatalogEntry[];
-  skipped: { commandId: string; reason: string }[];
-  duplicates: string[];
-  failed: { commandId: string; reason: string }[];
-}

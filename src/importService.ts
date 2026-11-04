@@ -1,5 +1,5 @@
-import { CandidateEntry, CatalogEntry, ImportOutcome } from "./types";
-import { mergeEntries, readCatalog, removeEntries, writeCatalog } from "./catalogIO";
+import { CandidateEntry, CatalogEntry } from "./types";
+import { mergeEntries, readCatalog, removeEntries, writeCatalog, writeCatalogIfChanged } from "./catalogIO";
 
 export interface ImportRequest {
   catalogPath: string;
@@ -7,10 +7,13 @@ export interface ImportRequest {
   selectedByDefault: boolean;
 }
 
-export interface ImportResult extends ImportOutcome {
+export interface ImportResult {
+  added: CatalogEntry[];
+  duplicates: string[];
   backupPath: string | null;
 }
 
+/** Adds the candidates to the catalog (skipping actionNames already present) and writes it with a backup. */
 export function performImport(request: ImportRequest): ImportResult {
   const existing = readCatalog(request.catalogPath);
   const toAddEntries: CatalogEntry[] = request.candidates.map((candidate) => ({
@@ -26,16 +29,13 @@ export function performImport(request: ImportRequest): ImportResult {
 
   return {
     added,
-    skipped: [],
     duplicates,
-    failed: [],
     backupPath,
   };
 }
 
 export interface RemovalResult {
   removed: string[];
-  notFound: string[];
   backupPath: string | null;
 }
 
@@ -48,15 +48,8 @@ export interface RemovalResult {
 export function performRemoval(catalogPath: string, actionNamesToRemove: string[]): RemovalResult {
   const existing = readCatalog(catalogPath);
   const { merged, removed } = removeEntries(existing, actionNamesToRemove);
-  const removedSet = new Set(removed);
-  const notFound = actionNamesToRemove.filter((name) => !removedSet.has(name));
-
-  let backupPath: null | string = null;
-  if (removed.length > 0) {
-    ({ backupPath } = writeCatalog(catalogPath, merged));
-  }
-
-  return { removed, notFound, backupPath };
+  const { backupPath } = writeCatalogIfChanged(catalogPath, merged, removed.length > 0);
+  return { removed, backupPath };
 }
 
 export interface FindReplaceUpdate {
@@ -99,10 +92,6 @@ export function performFindReplace(catalogPath: string, updates: FindReplaceUpda
     return { ...entry, displayName: newDisplayName, groupName: newGroupName };
   });
 
-  let backupPath: null | string = null;
-  if (updated.length > 0) {
-    ({ backupPath } = writeCatalog(catalogPath, merged));
-  }
-
+  const { backupPath } = writeCatalogIfChanged(catalogPath, merged, updated.length > 0);
   return { updated, backupPath };
 }

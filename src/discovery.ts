@@ -1,58 +1,98 @@
 import { DiscoveredCommand } from "./types";
 
+/** A manifest string that may be a localization object (`{ value, original }`) instead of plain text. */
+export type LocalizableText = string | { value?: string; original?: string };
+
 export interface ManifestCommandContribution {
   command: string;
-  title?: string;
-  category?: string;
+  title?: LocalizableText;
+  category?: LocalizableText;
 }
 
 export interface ManifestViewContribution {
   id: string;
+  name?: LocalizableText;
 }
 
 export interface ExtensionManifestLike {
   id: string;
   packageJSON: {
-    displayName?: string;
-    name?: string;
+    displayName?: LocalizableText;
+    name?: LocalizableText;
     contributes?: {
       commands?: ManifestCommandContribution[];
+      /** Keyed by view container id (built-in like "explorer", or declared in some `viewsContainers`). */
       views?: Record<string, ManifestViewContribution[]>;
+      /** Keyed by location ("activitybar", "panel", "secondarySidebar"). */
       viewsContainers?: Record<string, ManifestViewContribution[]>;
     };
   };
 }
 
-interface SourceInfo {
-  sourceExtensionId: string;
-  sourceExtensionDisplayName: string;
+/** Sentinel source-extension id for undeclared commands, whose owner the registry doesn't expose. */
+export const UNKNOWN_EXTENSION_ID = "unknown";
+
+/** Source-extension display name shown for undeclared commands. */
+export const UNDECLARED_EXTENSION_NAME = "Undeclared";
+
+/** Subcategory for generated view commands unless an extension's views span several placements. */
+export const VIEWS_SUBGROUP = "Views";
+
+/** Display-name templates for the two generated view commands; `{view}` is the view's name. */
+export const FOCUS_VIEW_TITLE_TEMPLATE = "Focus on {view} View";
+export const OPEN_VIEW_TITLE_TEMPLATE = "Show {view} View";
+
+/** The only generated per-view commands surfaced: id suffix -> title template. */
+const GENERATED_VIEW_COMMANDS: ReadonlyArray<readonly [string, string]> = [
+  ["focus", FOCUS_VIEW_TITLE_TEMPLATE],
+  ["open", OPEN_VIEW_TITLE_TEMPLATE],
+];
+
+/** `contributes.viewsContainers` location key -> placement name. */
+const LOCATION_PLACEMENTS: Readonly<Record<string, string>> = {
+  activitybar: "Activity Bar",
+  panel: "Panel",
+  secondarySidebar: "Secondary Sidebar",
+};
+
+/**
+ * Built-in view container ids -> placement. This is VS Code's default and is not derivable from
+ * any manifest, so it is hard-coded here.
+ */
+const BUILT_IN_CONTAINER_PLACEMENTS: Readonly<Record<string, string>> = {
+  explorer: "Activity Bar",
+  scm: "Activity Bar",
+  debug: "Activity Bar",
+  test: "Activity Bar",
+  remote: "Activity Bar",
+  extensions: "Activity Bar",
+};
+
+/** Resolves a plain-or-localized manifest string to trimmed text, or undefined when absent/empty. */
+export function localizedText(text: LocalizableText | undefined): string | undefined {
+  const raw = typeof text === "string" ? text : text?.value;
+  const trimmed = raw?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
-function extensionDisplayName(ext: ExtensionManifestLike): string {
-  return ext.packageJSON.displayName ?? ext.packageJSON.name ?? ext.id;
+export function extensionDisplayName(ext: ExtensionManifestLike): string {
+  return localizedText(ext.packageJSON.displayName) ?? localizedText(ext.packageJSON.name) ?? ext.id;
 }
 
 /**
  * True if the extension declares at least one command in `contributes.commands`. Used to filter
- * command-less extensions (themes, icon themes, keymaps, grammar/language-syntax-only extensions,
- * etc.) out of the "search by extension" picker — not by author-declared `categories` metadata
- * (self-reported, and only catches whichever categories are explicitly checked for), but by
- * whether there's actually anything to import. An extension with zero declared commands has
- * nothing to offer even if it declares views (the only other thing it could contribute is VS
- * Code's auto-generated per-view commands, which are always excluded anyway — see
- * isGeneratedViewOrContainerCommand).
+ * command-less extensions (themes, keymaps, grammars, etc.) out of the "search by extension"
+ * picker by whether there's actually anything to import, not by self-reported `categories`.
  */
 export function hasDeclaredCommands(ext: ExtensionManifestLike): boolean {
   return (ext.packageJSON.contributes?.commands?.length ?? 0) > 0;
 }
 
-/** Discovers commands declared in installed extensions' package.json `contributes.commands`. */
-export function discoverManifestCommands(extensions: ExtensionManifestLike[]): DiscoveredCommand[] {
+function discoverDeclared(extensions: ExtensionManifestLike[]): DiscoveredCommand[] {
   const results: DiscoveredCommand[] = [];
   for (const ext of extensions) {
-    const commands = ext.packageJSON.contributes?.commands ?? [];
     const displayName = extensionDisplayName(ext);
-    for (const contribution of commands) {
+    for (const contribution of ext.packageJSON.contributes?.commands ?? []) {
       if (!contribution.command) {
         continue;
       }
@@ -60,202 +100,110 @@ export function discoverManifestCommands(extensions: ExtensionManifestLike[]): D
         commandId: contribution.command,
         sourceExtensionId: ext.id,
         sourceExtensionDisplayName: displayName,
-        title: contribution.title,
-        category: contribution.category,
+        kind: "declared",
+        title: localizedText(contribution.title),
+        category: localizedText(contribution.category),
       });
     }
   }
   return results;
 }
 
-/**
- * For each source extension, infers its predominant namespace root from its own
- * manifest-declared commands — the single root shared by the most of them (e.g. "claude-vscode."
- * for an extension whose commands are mostly "claude-vscode.*" with a handful of "claude-code.*"
- * stragglers). Used to derive sensible default subgroups for extension-based search, without
- * requiring the user to type a namespace prefix by hand. A minority root's commands simply get no
- * default subgroup (same as any command whose id doesn't match a namespace prefix today) —
- * expected to be rare, and editable via `subGroupRules` or the Quick Pick review step when it
- * happens, rather than something worth a more elaborate multi-root scheme.
- */
-export function inferPredominantNamespaceRoots(manifestCommands: DiscoveredCommand[]): Map<string, string> {
-  const rootCountsByExtension = new Map<string, Map<string, number>>();
-  for (const cmd of manifestCommands) {
-    const root = namespaceRoot(cmd.commandId);
-    if (!root) {
-      continue;
-    }
-    const counts = rootCountsByExtension.get(cmd.sourceExtensionId) ?? new Map<string, number>();
-    counts.set(root, (counts.get(root) ?? 0) + 1);
-    rootCountsByExtension.set(cmd.sourceExtensionId, counts);
-  }
-
-  const predominantRootByExtension = new Map<string, string>();
-  for (const [extensionId, counts] of rootCountsByExtension) {
-    let bestRoot: string | null = null;
-    let bestCount = 0;
-    for (const [root, count] of counts) {
-      if (count > bestCount) {
-        bestCount = count;
-        bestRoot = root;
-      }
-    }
-    if (bestRoot) {
-      predominantRootByExtension.set(extensionId, `${bestRoot}.`);
-    }
-  }
-  return predominantRootByExtension;
-}
-
-export interface ViewOwnership {
-  /** Declared view id -> the extension that declared it, e.g. "claudeVSCodeSidebar" -> Claude Code. */
-  viewIdToSource: Map<string, SourceInfo>;
-  /** Declared view container id -> the extension that declared it, e.g. "claude-sidebar" -> Claude Code. */
-  containerIdToSource: Map<string, SourceInfo>;
-}
-
-/**
- * Builds a lookup of which extension declared each view and view container, from every installed
- * extension's `contributes.views` / `contributes.viewsContainers`. This is the authoritative,
- * exact source for attributing VS Code's auto-generated per-view/per-container commands (e.g.
- * "claudeVSCodeSidebar.focus", "workbench.view.extension.claude-sidebar") back to their owning
- * extension — those commands are never declared in `contributes.commands` (VS Code generates them
- * at runtime), so this is the only place that relationship is actually recorded.
- */
-export function discoverViewOwnership(extensions: ExtensionManifestLike[]): ViewOwnership {
-  const viewIdToSource = new Map<string, SourceInfo>();
-  const containerIdToSource = new Map<string, SourceInfo>();
-
+/** Container id -> location key, from every installed extension's `contributes.viewsContainers`. */
+function collectContainerLocations(extensions: ExtensionManifestLike[]): Map<string, string> {
+  const locations = new Map<string, string>();
   for (const ext of extensions) {
-    const source: SourceInfo = { sourceExtensionId: ext.id, sourceExtensionDisplayName: extensionDisplayName(ext) };
-
-    const views = ext.packageJSON.contributes?.views ?? {};
-    for (const location of Object.keys(views)) {
-      for (const view of views[location] ?? []) {
-        if (view.id) {
-          viewIdToSource.set(view.id, source);
-        }
-      }
-    }
-
     const containers = ext.packageJSON.contributes?.viewsContainers ?? {};
-    for (const location of Object.keys(containers)) {
-      for (const container of containers[location] ?? []) {
-        if (container.id) {
-          containerIdToSource.set(container.id, source);
+    for (const [location, list] of Object.entries(containers)) {
+      for (const container of list ?? []) {
+        if (container.id && !locations.has(container.id)) {
+          locations.set(container.id, location);
         }
       }
     }
   }
-
-  return { viewIdToSource, containerIdToSource };
+  return locations;
 }
 
-const WORKBENCH_VIEW_EXTENSION_PREFIX = "workbench.view.extension.";
-const RESET_VIEW_CONTAINER_LOCATION_SUFFIX = ".resetViewContainerLocation";
+/** Placement name for a view's container, or undefined when it can't be resolved. */
+function resolvePlacement(containerId: string, containerLocations: Map<string, string>): string | undefined {
+  const location = containerLocations.get(containerId);
+  return location !== undefined ? LOCATION_PLACEMENTS[location] : BUILT_IN_CONTAINER_PLACEMENTS[containerId];
+}
 
 /**
- * Extracts the view container id from VS Code's auto-generated container commands
- * ("workbench.view.extension.<containerId>" to open it, or with the
- * ".resetViewContainerLocation" suffix), or null if commandId doesn't match that shape.
+ * Builds the `<viewId>.focus` / `<viewId>.open` commands VS Code generates for each named view an
+ * extension declares — only when that id is actually in the live registry. The subcategory is
+ * "Views" unless the extension's views sit in more than one placement, in which case each view's
+ * own placement is used so they stay separated.
  */
-function extractContainerId(commandId: string): string | null {
-  if (!commandId.startsWith(WORKBENCH_VIEW_EXTENSION_PREFIX)) {
-    return null;
-  }
-  const rest = commandId.slice(WORKBENCH_VIEW_EXTENSION_PREFIX.length);
-  return rest.endsWith(RESET_VIEW_CONTAINER_LOCATION_SUFFIX)
-    ? rest.slice(0, -RESET_VIEW_CONTAINER_LOCATION_SUFFIX.length)
-    : rest;
-}
+function discoverGenerated(
+  extensions: ExtensionManifestLike[],
+  registryIds: Set<string>,
+  containerLocations: Map<string, string>
+): DiscoveredCommand[] {
+  const results: DiscoveredCommand[] = [];
+  for (const ext of extensions) {
+    const views: Array<{ id: string; name: string; placement?: string }> = [];
+    for (const [containerId, list] of Object.entries(ext.packageJSON.contributes?.views ?? {})) {
+      const placement = resolvePlacement(containerId, containerLocations);
+      for (const view of list ?? []) {
+        const name = localizedText(view.name);
+        if (view.id && name) {
+          views.push({ id: view.id, name, placement });
+        }
+      }
+    }
 
-/** The first dot-separated segment of a command id, used as a rough "namespace root" for attribution. */
-function namespaceRoot(commandId: string): string | null {
-  const dot = commandId.indexOf(".");
-  return dot > 0 ? commandId.slice(0, dot) : null;
-}
-
-const GENERATED_VIEW_COMMAND_SUFFIXES = [".focus", ".open", ".resetViewLocation", ".removeView", ".toggleVisibility"];
-
-/**
- * True if commandId is exactly one of VS Code's auto-generated per-view or per-container
- * commands — matched precisely against real declared view/container ids from `viewOwnership`,
- * not a suffix guess. This is deliberately stricter than checking "ends with .open" etc: a
- * command like "claude-vscode.terminal.open" also ends in ".open" but is a deliberate, titled
- * command, not generated boilerplate — it doesn't match here because "claude-vscode.terminal"
- * was never declared as a view id, only "claudeVSCodeSidebar" and similar were.
- */
-export function isGeneratedViewOrContainerCommand(commandId: string, viewOwnership: ViewOwnership): boolean {
-  const containerId = extractContainerId(commandId);
-  if (containerId !== null && viewOwnership.containerIdToSource.has(containerId)) {
-    return true;
-  }
-  for (const suffix of GENERATED_VIEW_COMMAND_SUFFIXES) {
-    if (commandId.endsWith(suffix)) {
-      const viewId = commandId.slice(0, -suffix.length);
-      if (viewOwnership.viewIdToSource.has(viewId)) {
-        return true;
+    const distinctPlacements = new Set(views.flatMap((v) => (v.placement ? [v.placement] : [])));
+    const displayName = extensionDisplayName(ext);
+    for (const view of views) {
+      const defaultSubGroupName = distinctPlacements.size > 1 ? view.placement ?? VIEWS_SUBGROUP : VIEWS_SUBGROUP;
+      for (const [suffix, template] of GENERATED_VIEW_COMMANDS) {
+        const commandId = `${view.id}.${suffix}`;
+        if (registryIds.has(commandId)) {
+          results.push({
+            commandId,
+            sourceExtensionId: ext.id,
+            sourceExtensionDisplayName: displayName,
+            kind: "generated",
+            title: template.replace("{view}", view.name),
+            defaultSubGroupName,
+          });
+        }
       }
     }
   }
-  return false;
+  return results;
 }
 
 /**
- * Merges command IDs from the live VS Code command registry with manifest-discovered commands.
- * Registry-only commands (not declared in any manifest — e.g. VS Code's own auto-generated
- * per-view/per-container commands, or commands registered dynamically at runtime) can't be
- * attributed directly, since the command registry API doesn't expose which extension owns a
- * given id. Resolution is attempted in order of confidence:
- *
- * 1. Exact view/container ownership (`viewOwnership`, from `contributes.views`/`viewsContainers`)
- *    — authoritative, since VS Code's per-view/per-container commands are always named after the
- *    declared view/container id.
- * 2. Sibling namespace root: a registry-only command sharing its namespace root with declared
- *    sibling commands (e.g. "claude-vscode.toggleDictation" alongside 31 declared
- *    "claude-vscode.*" commands) is attributed to the same source, unless that root is shared by
- *    more than one extension (ambiguous — never guessed at).
- * 3. Falls back to an "Other" source when neither resolves anything.
+ * Discovers every command and classifies it (see CommandKind): declared commands from manifests,
+ * generated per-view commands (only those present in the registry), and every remaining registry
+ * id as undeclared. An id is reported once; declared wins over generated wins over undeclared.
  */
-export function mergeRegistryCommands(
-  manifestCommands: DiscoveredCommand[],
-  registryCommandIds: string[],
-  viewOwnership: ViewOwnership = { viewIdToSource: new Map(), containerIdToSource: new Map() }
-): DiscoveredCommand[] {
-  const knownIds = new Set(manifestCommands.map((c) => c.commandId));
+export function discoverCommands(extensions: ExtensionManifestLike[], registryCommandIds: string[]): DiscoveredCommand[] {
+  const registryIds = new Set(registryCommandIds);
+  const declared = discoverDeclared(extensions);
+  const generated = discoverGenerated(extensions, registryIds, collectContainerLocations(extensions));
 
-  const rootToSource = new Map<string, SourceInfo | null>();
-  for (const cmd of manifestCommands) {
-    const root = namespaceRoot(cmd.commandId);
-    if (!root) {
-      continue;
-    }
-    const existing = rootToSource.get(root);
-    if (existing === undefined) {
-      rootToSource.set(root, { sourceExtensionId: cmd.sourceExtensionId, sourceExtensionDisplayName: cmd.sourceExtensionDisplayName });
-    } else if (existing && existing.sourceExtensionId !== cmd.sourceExtensionId) {
-      rootToSource.set(root, null); // ambiguous — more than one extension under this root
+  const results: DiscoveredCommand[] = [];
+  const knownIds = new Set<string>();
+  for (const cmd of [...declared, ...generated]) {
+    if (!knownIds.has(cmd.commandId)) {
+      knownIds.add(cmd.commandId);
+      results.push(cmd);
     }
   }
-
-  const merged = [...manifestCommands];
-  for (const commandId of registryCommandIds) {
+  for (const commandId of registryIds) {
     if (!knownIds.has(commandId)) {
-      const root = namespaceRoot(commandId);
-      const viewOwner = root ? viewOwnership.viewIdToSource.get(root) : undefined;
-      const containerId = extractContainerId(commandId);
-      const containerOwner = containerId ? viewOwnership.containerIdToSource.get(containerId) : undefined;
-      const siblingOwner = root ? rootToSource.get(root) : undefined;
-      const inferred = viewOwner ?? containerOwner ?? siblingOwner ?? undefined;
-
-      merged.push({
+      results.push({
         commandId,
-        sourceExtensionId: inferred?.sourceExtensionId ?? "unknown",
-        sourceExtensionDisplayName: inferred?.sourceExtensionDisplayName ?? "Other",
-        isGenerated: isGeneratedViewOrContainerCommand(commandId, viewOwnership),
+        sourceExtensionId: UNKNOWN_EXTENSION_ID,
+        sourceExtensionDisplayName: UNDECLARED_EXTENSION_NAME,
+        kind: "undeclared",
       });
-      knownIds.add(commandId);
     }
   }
-  return merged;
+  return results;
 }

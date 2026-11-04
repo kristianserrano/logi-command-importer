@@ -3,7 +3,6 @@ import { SupportedPlatform } from "./types";
 
 /** Current Logi Command Manager global storage id. Never use the obsolete logitech-europe-sa.logiactions id. */
 export const LOGI_CATALOG_EXTENSION_ID = "logi-sw.logiactions";
-export const OBSOLETE_LOGI_CATALOG_EXTENSION_ID = "logitech-europe-sa.logiactions";
 const CATALOG_FILE_NAME = "logiActions.json";
 
 export interface PathResolutionEnv {
@@ -13,47 +12,39 @@ export interface PathResolutionEnv {
   appData?: string;
 }
 
+const VSCODE_DIR = "Code";
+const USER_DIR = "User";
+const GLOBAL_STORAGE_DIR = "globalStorage";
+
 /**
  * Resolves the active Logi Command Manager catalog path for VS Code (stable build) on the given platform.
+ * Only the per-platform base directory differs; the Code/User/globalStorage/<id>/<file> tail is shared.
  */
 export function resolveCatalogPath(env: PathResolutionEnv): string {
+  let pathApi: typeof path.posix;
+  let baseDir: string;
   switch (env.platform) {
     case "darwin":
-      return path.posix.join(
-        env.homedir,
-        "Library",
-        "Application Support",
-        "Code",
-        "User",
-        "globalStorage",
-        LOGI_CATALOG_EXTENSION_ID,
-        CATALOG_FILE_NAME
-      );
-    case "win32": {
-      const appData = env.appData ?? path.win32.join(env.homedir, "AppData", "Roaming");
-      return path.win32.join(appData, "Code", "User", "globalStorage", LOGI_CATALOG_EXTENSION_ID, CATALOG_FILE_NAME);
-    }
+      pathApi = path.posix;
+      baseDir = path.posix.join(env.homedir, "Library", "Application Support");
+      break;
+    case "win32":
+      pathApi = path.win32;
+      baseDir = env.appData ?? path.win32.join(env.homedir, "AppData", "Roaming");
+      break;
     case "linux":
-      return path.posix.join(
-        env.homedir,
-        ".config",
-        "Code",
-        "User",
-        "globalStorage",
-        LOGI_CATALOG_EXTENSION_ID,
-        CATALOG_FILE_NAME
-      );
+      pathApi = path.posix;
+      baseDir = path.posix.join(env.homedir, ".config");
+      break;
     default: {
       const exhaustive: never = env.platform;
       throw new Error(`Unsupported platform: ${String(exhaustive)}`);
     }
   }
+  return pathApi.join(baseDir, VSCODE_DIR, USER_DIR, GLOBAL_STORAGE_DIR, LOGI_CATALOG_EXTENSION_ID, CATALOG_FILE_NAME);
 }
 
-export function resolveObsoleteCatalogPath(env: PathResolutionEnv): string {
-  return resolveCatalogPath(env).replace(LOGI_CATALOG_EXTENSION_ID, OBSOLETE_LOGI_CATALOG_EXTENSION_ID);
-}
-
+/** Type guard: true if `platform` is one of the OS identifiers this extension supports. */
 export function isSupportedPlatform(platform: string): platform is SupportedPlatform {
   return platform === "darwin" || platform === "win32" || platform === "linux";
 }
