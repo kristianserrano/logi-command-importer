@@ -2,7 +2,7 @@
   "name": "logi-command-importer",
   "displayName": "Logi Command Importer",
   "description": "Discover namespaced VS Code commands and import them into the Logi Command Manager catalog used by Logi Options+.",
-  "version": "1.1.1",
+  "version": "1.1.0",
   "publisher": "kristianserrano",
   "license": "MIT",
   "repository": {
