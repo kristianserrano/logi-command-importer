@@ -20,38 +20,52 @@ import { buildDisplayNameFromManifest, deriveDefaultSubGroup, inferDisplayName, 
  * group names of declared/generated commands — never to explicit overrides (already the final
  * answer) nor to the fixed Saved Commands group.
  */
-export function buildCandidates(discovered: DiscoveredCommand[], config: ImporterConfig): CandidateEntry[] {
+function isCandidateIncluded(cmd: DiscoveredCommand, config: ImporterConfig): boolean {
   const hasAnyCriteria = config.namespacePrefixes.length > 0 || config.sourceExtensionFilters.length > 0;
+  const isUndeclared = cmd.kind === "undeclared";
+  const matchesNamespace = matchesAnyNamespace(cmd.commandId, config.namespacePrefixes);
+  const matchesExtension = !isUndeclared && matchesSourceExtension(cmd.sourceExtensionId, config.sourceExtensionFilters);
 
+  return hasAnyCriteria ? matchesNamespace || matchesExtension : !isUndeclared;
+}
+
+function resolveSubGroupName(cmd: DiscoveredCommand, config: ImporterConfig): string | null {
+  const isUndeclared = cmd.kind === "undeclared";
+
+  return (
+    deriveDefaultSubGroup(cmd.commandId, config.subGroupRules, isUndeclared ? config.namespacePrefixes : []) ??
+    cmd.defaultSubGroupName ??
+    null
+  );
+}
+
+function resolveDisplayName(cmd: DiscoveredCommand, config: ImporterConfig, subGroupName: string | null): string {
+  const isUndeclared = cmd.kind === "undeclared";
+  const derivedName = isUndeclared ? inferDisplayName(cmd.commandId) : buildDisplayNameFromManifest(cmd.commandId, cmd.title);
+  const derivedDisplayName = isUndeclared && subGroupName ? `${subGroupName}: ${derivedName}` : derivedName;
+
+  return config.displayNameOverrides[cmd.commandId] ?? applyFindReplaceRules(derivedDisplayName, config.displayNameFindReplace);
+}
+
+function resolveGroupName(cmd: DiscoveredCommand, config: ImporterConfig): string {
+  const isUndeclared = cmd.kind === "undeclared";
+  const derivedGroupName = isUndeclared
+    ? SAVED_COMMANDS_GROUP
+    : applyFindReplaceRules(cmd.category ?? cmd.sourceExtensionDisplayName, config.groupNameFindReplace);
+
+  return config.groupNameOverrides[cmd.commandId] ?? derivedGroupName;
+}
+
+export function buildCandidates(discovered: DiscoveredCommand[], config: ImporterConfig): CandidateEntry[] {
   const candidates: CandidateEntry[] = [];
   for (const cmd of discovered) {
-    const isUndeclared = cmd.kind === "undeclared";
-    const matchesNamespace = matchesAnyNamespace(cmd.commandId, config.namespacePrefixes);
-    const matchesExtension = !isUndeclared && matchesSourceExtension(cmd.sourceExtensionId, config.sourceExtensionFilters);
-    const included = hasAnyCriteria ? matchesNamespace || matchesExtension : !isUndeclared;
-    if (!included) {
+    if (!isCandidateIncluded(cmd, config)) {
       continue;
     }
 
-    // Only undeclared commands derive a subcategory from the namespace prefix; for the others the
-    // empty prefix list leaves just the explicit `subGroupRules` lookup.
-    const subGroupName =
-      deriveDefaultSubGroup(cmd.commandId, config.subGroupRules, isUndeclared ? config.namespacePrefixes : []) ??
-      cmd.defaultSubGroupName ??
-      null;
-
-    const derivedName = isUndeclared
-      ? inferDisplayName(cmd.commandId)
-      : buildDisplayNameFromManifest(cmd.commandId, cmd.title);
-    const derivedDisplayName = isUndeclared && subGroupName ? `${subGroupName}: ${derivedName}` : derivedName;
-    const displayName =
-      config.displayNameOverrides[cmd.commandId] ??
-      applyFindReplaceRules(derivedDisplayName, config.displayNameFindReplace);
-
-    const derivedGroupName = isUndeclared
-      ? SAVED_COMMANDS_GROUP
-      : applyFindReplaceRules(cmd.category ?? cmd.sourceExtensionDisplayName, config.groupNameFindReplace);
-    const groupName = config.groupNameOverrides[cmd.commandId] ?? derivedGroupName;
+    const subGroupName = resolveSubGroupName(cmd, config);
+    const displayName = resolveDisplayName(cmd, config, subGroupName);
+    const groupName = resolveGroupName(cmd, config);
 
     candidates.push({
       commandId: cmd.commandId,
@@ -62,6 +76,7 @@ export function buildCandidates(discovered: DiscoveredCommand[], config: Importe
       subGroupName,
     });
   }
+
   disambiguateDuplicateNames(candidates, config.displayNameOverrides);
   return candidates.sort((a, b) => a.commandId.localeCompare(b.commandId));
 }

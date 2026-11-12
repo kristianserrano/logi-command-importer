@@ -182,22 +182,25 @@ function discoverGenerated(
  * generated per-view commands (only those present in the registry), and every remaining registry
  * id as undeclared. An id is reported once; declared wins over generated wins over undeclared.
  */
+function addDiscoveredCommand(results: Map<string, DiscoveredCommand>, cmd: DiscoveredCommand): void {
+  if (!results.has(cmd.commandId)) {
+    results.set(cmd.commandId, cmd);
+  }
+}
+
 export function discoverCommands(extensions: ExtensionManifestLike[], registryCommandIds: string[]): DiscoveredCommand[] {
   const registryIds = new Set(registryCommandIds);
   const declared = discoverDeclared(extensions);
   const generated = discoverGenerated(extensions, registryIds, collectContainerLocations(extensions));
+  const results = new Map<string, DiscoveredCommand>();
 
-  const results: DiscoveredCommand[] = [];
-  const knownIds = new Set<string>();
   for (const cmd of [...declared, ...generated]) {
-    if (!knownIds.has(cmd.commandId)) {
-      knownIds.add(cmd.commandId);
-      results.push(cmd);
-    }
+    addDiscoveredCommand(results, cmd);
   }
+
   for (const commandId of registryIds) {
-    if (!knownIds.has(commandId)) {
-      results.push({
+    if (!results.has(commandId)) {
+      addDiscoveredCommand(results, {
         commandId,
         sourceExtensionId: UNKNOWN_EXTENSION_ID,
         sourceExtensionDisplayName: UNDECLARED_EXTENSION_NAME,
@@ -205,5 +208,6 @@ export function discoverCommands(extensions: ExtensionManifestLike[], registryCo
       });
     }
   }
-  return results;
+
+  return [...results.values()];
 }
