@@ -182,12 +182,6 @@ function discoverGenerated(
  * generated per-view commands (only those present in the registry), and every remaining registry
  * id as undeclared. An id is reported once; declared wins over generated wins over undeclared.
  */
-function addDiscoveredCommand(results: Map<string, DiscoveredCommand>, cmd: DiscoveredCommand): void {
-  if (!results.has(cmd.commandId)) {
-    results.set(cmd.commandId, cmd);
-  }
-}
-
 export function discoverCommands(extensions: ExtensionManifestLike[], registryCommandIds: string[]): DiscoveredCommand[] {
   const registryIds = new Set(registryCommandIds);
   const declared = discoverDeclared(extensions);
@@ -195,12 +189,14 @@ export function discoverCommands(extensions: ExtensionManifestLike[], registryCo
   const results = new Map<string, DiscoveredCommand>();
 
   for (const cmd of [...declared, ...generated]) {
-    addDiscoveredCommand(results, cmd);
+    if (!results.has(cmd.commandId)) {
+      results.set(cmd.commandId, cmd);
+    }
   }
 
   for (const commandId of registryIds) {
     if (!results.has(commandId)) {
-      addDiscoveredCommand(results, {
+      results.set(commandId, {
         commandId,
         sourceExtensionId: UNKNOWN_EXTENSION_ID,
         sourceExtensionDisplayName: UNDECLARED_EXTENSION_NAME,
