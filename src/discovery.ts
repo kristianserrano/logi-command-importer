@@ -186,18 +186,17 @@ export function discoverCommands(extensions: ExtensionManifestLike[], registryCo
   const registryIds = new Set(registryCommandIds);
   const declared = discoverDeclared(extensions);
   const generated = discoverGenerated(extensions, registryIds, collectContainerLocations(extensions));
+  const results = new Map<string, DiscoveredCommand>();
 
-  const results: DiscoveredCommand[] = [];
-  const knownIds = new Set<string>();
   for (const cmd of [...declared, ...generated]) {
-    if (!knownIds.has(cmd.commandId)) {
-      knownIds.add(cmd.commandId);
-      results.push(cmd);
+    if (!results.has(cmd.commandId)) {
+      results.set(cmd.commandId, cmd);
     }
   }
+
   for (const commandId of registryIds) {
-    if (!knownIds.has(commandId)) {
-      results.push({
+    if (!results.has(commandId)) {
+      results.set(commandId, {
         commandId,
         sourceExtensionId: UNKNOWN_EXTENSION_ID,
         sourceExtensionDisplayName: UNDECLARED_EXTENSION_NAME,
@@ -205,5 +204,6 @@ export function discoverCommands(extensions: ExtensionManifestLike[], registryCo
       });
     }
   }
-  return results;
+
+  return [...results.values()];
 }

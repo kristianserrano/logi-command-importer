@@ -84,6 +84,18 @@ describe("discovery", () => {
       assert.strictEqual(result.length, 1);
       assert.strictEqual(result[0].kind, "declared");
     });
+
+    it("prefers declared commands over generated commands with the same id", () => {
+      const declared = ext("pub.declared", { commands: [{ command: "myView.focus", title: "Declared title" }] }, "Declared");
+      const generated = viewExt("pub.generated", { explorer: [{ id: "myView", name: "My View" }] });
+
+      const result = discoverCommands([declared, generated], ["myView.focus"]);
+
+      assert.strictEqual(result.length, 1);
+      assert.strictEqual(result[0].kind, "declared");
+      assert.strictEqual(result[0].sourceExtensionId, "pub.declared");
+      assert.strictEqual(result[0].title, "Declared title");
+    });
   });
 
   describe("generated view commands", () => {
